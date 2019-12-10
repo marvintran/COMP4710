@@ -7,6 +7,8 @@ import smile.data.type.StructType;
 import smile.io.Arff;
 import smile.io.CSV;
 
+import java.io.BufferedWriter;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.List;
@@ -47,9 +49,40 @@ public class TransitDataMining {
     FPTree tree = FPTree.of(minSupport, () -> ReadFromFile.read(path));
     List<ItemSet> results = FPGrowth.apply(tree).collect(Collectors.toList());
 
-    for(int i = 0; i < results.size(); i++) {
-      String frequentSet = results.get(i).toString();
-      System.out.println(frequentSet);
+    try{
+      BufferedWriter bw = new BufferedWriter(new FileWriter("frequentPatterns.txt"));
+      for(int i = 0; i < results.size(); i++) {
+
+        String frequentSet = results.get(i).toString();
+        String[] tokens = frequentSet.split(" ");
+        long[] orderedFrequentSet = new long[5];
+        if(tokens.length == 6)
+        {
+          orderedFrequentSet[0] = Long.parseLong(tokens[0]);
+          orderedFrequentSet[1] = Long.parseLong(tokens[1]);
+          orderedFrequentSet[2] = Long.parseLong(tokens[2]);
+          orderedFrequentSet[3] = Long.parseLong(tokens[3]);
+          orderedFrequentSet[4] = Long.parseLong(tokens[4]);
+
+          Arrays.sort(orderedFrequentSet,0,5);
+
+          String toWrite = orderedFrequentSet[0]+","+
+            orderedFrequentSet[1]+","+
+            orderedFrequentSet[2]+","+
+            orderedFrequentSet[3]+","+
+            orderedFrequentSet[4];
+
+          System.out.println(toWrite);
+          bw.write(toWrite);
+          bw.newLine();
+          bw.flush();
+        }
+        //System.out.println(frequentSet);
+      }
+      bw.close();
+    } catch (Exception e) {
+      e.printStackTrace();
+      System.exit(-1);
     }
   }
 
