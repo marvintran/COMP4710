@@ -82,7 +82,7 @@ public class TransitDataMining {
   }
 
   //https://github.com/haifengl/smile/blob/master/shell/src/universal/data/regression/diabetes.csv
-  private static int[] decisionTreeCSV(String path){
+  private static int[] decisionTree(String path){
 
     System.out.println("Creating Decision Tree\n");
 
