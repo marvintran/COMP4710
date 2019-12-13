@@ -10,8 +10,11 @@ import smile.data.type.DataTypes;
 import smile.data.type.StructField;
 import smile.data.type.StructType;
 import smile.io.CSV;
+import smile.validation.RMSE;
 
 import java.io.*;
+import java.text.DecimalFormat;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.function.Function;
@@ -24,14 +27,13 @@ public class TransitDataMining {
     String trainingDataEncoded = "C:/Path/To/trainingData.txt";
     String predictDataEncoded = "C:/Path/To/predictData.txt";
 
-    int minSupport = 25;
-    int[] predictions = {};
+    int minSupport = 300;
 
-    runFPGrowthFromFile(trainingDataEncoded, minSupport);
-    predictions = decisionTree(predictDataEncoded);
-    calculateCorrectness(predictDataEncoded, predictions);
+    runFPGrowthFromFile(trainingDataEncoded, minSupport);// outputs frequentPatterns.csv
+    decisionTree(predictDataEncoded);// outputs predictAndCorrect.txt
+    calculateCorrectness();
 
-    System.out.println("Finished Successfully");
+    System.out.println("\nFinished Successfully");
   }
 
   private static void runFPGrowthFromFile(String path, int minSupport){
@@ -42,6 +44,7 @@ public class TransitDataMining {
     System.out.println("Mining frequent itemsets using FPGrowth\n");
     List<ItemSet> results = FPGrowth.apply(tree).collect(Collectors.toList());
 
+    System.out.println("Writing frequent itemsets to file frequentPatterns.csv\n");
     try{
       BufferedWriter bw = new BufferedWriter(new FileWriter("frequentPatterns.csv"));
 
@@ -81,15 +84,14 @@ public class TransitDataMining {
     }
   }
 
-  //https://github.com/haifengl/smile/blob/master/shell/src/universal/data/regression/diabetes.csv
-  private static int[] decisionTree(String path){
+  private static void decisionTree(String path){
 
     System.out.println("Creating Decision Tree\n");
 
     int[] predictions = {};
 
     try{
-      CSVFormat format = CSVFormat.DEFAULT.withDelimiter(' ');//.withFirstRecordAsHeader();
+      CSVFormat format = CSVFormat.DEFAULT.withDelimiter(' ');
       CSV csv = new CSV(format);
 
       StructType schema = DataTypes.struct(
@@ -104,46 +106,86 @@ public class TransitDataMining {
       DataFrame data = csv.read(java.nio.file.Paths.get("frequentPatterns.csv"));
       Formula formula = Formula.lhs("delayValue");
       DecisionTree model = DecisionTree.fit(formula, data);
-      System.out.println(model.dot());// put the output of this into http://viz-js.com/
+      //System.out.println(model.dot());// put the output of this into graphviz http://viz-js.com/
 
       System.out.println("Predicting delayValue\n");
       //DataFrame dataToPredict = csv.read(java.nio.file.Paths.get(path));
       DataFrame dataToPredict = DataFrame.of(ReadFromFileTupleStream.read(path, schema));
       predictions = model.predict(dataToPredict);
 
+      System.out.println("Writing predictions and correct values to predictAndCorrect.txt\n");
+      BufferedWriter bw = new BufferedWriter(new FileWriter("predictAndCorrect.txt", true));
+      BufferedReader br = new BufferedReader(new FileReader(path));
+
+      String strCurrentLine = "";
+      int count = 0;
+
+      while ((strCurrentLine = br.readLine()) != null)
+      {
+        String[] tokens = strCurrentLine.split(" ");
+        String toWrite = Integer.toString(predictions[count]) + " " + tokens[4];
+        bw.write(toWrite);
+        bw.newLine();
+        bw.flush();
+      }
+      bw.close();
+
     } catch (Exception e) {
       e.printStackTrace();
       System.exit(-1);
     }
-    return predictions;
   }
 
-  private static void calculateCorrectness(String path, int[] predictions){
+  private static void calculateCorrectness(){
 
     System.out.println("Calculating Correctness\n");
-    try{
-      BufferedReader br = new BufferedReader(new FileReader(path));
 
+    try{
+      BufferedReader br = new BufferedReader(new FileReader("predictAndCorrect.txt"));
       String strCurrentLine;
+
+      ArrayList<Double> predictions = new ArrayList<>();
+      ArrayList<Double> correct = new ArrayList<>();
+      double[] predictDoubleArr = {};
+      double[] correctDoubleArr = {};
+
       int correctValue = 0;
       int predictedValue = 1;
+      int totalValues = 0;
+      int numCorrect = 0;
 
-      int index = 0;// also the total rows in the array
-      int correctCount = 0;
+      while ((strCurrentLine = br.readLine()) != null)
+      {
+        String[] tokens = strCurrentLine.split(" ");
 
-      while ((strCurrentLine = br.readLine()) != null) {
-        correctValue = Character.getNumericValue(strCurrentLine.charAt(strCurrentLine.length()-1));
-        predictedValue = predictions[index];
+        predictedValue = Integer.parseInt(tokens[0]);
+        correctValue = Integer.parseInt(tokens[1]);
 
-        if(correctValue == predictedValue)
-          correctCount++;
+        predictions.add((double)predictedValue);
+        correct.add((double)correctValue);
 
-        index++;
+        if(predictedValue == correctValue)
+          numCorrect++;
+
+        totalValues++;
       }
 
-      System.out.println("Total Values: " + index);
-      System.out.println("Predictions Correct: " + correctCount);
       br.close();
+
+      System.out.println("Total Values: " + totalValues);
+      System.out.println("Predictions Correct: " + numCorrect);
+
+      DecimalFormat df = new DecimalFormat("##.##%");
+      double percent = ((double)numCorrect / (double)totalValues);
+      String formattedPercent = df.format(percent);
+      System.out.println("Percentage Correct: " + formattedPercent);
+
+      System.out.println("\nCalculating RMSE\n");
+
+      predictDoubleArr = predictions.stream().mapToDouble(i -> i).toArray();
+      correctDoubleArr = correct.stream().mapToDouble(i -> i).toArray();
+      double rmse = RMSE.of(correctDoubleArr, predictDoubleArr);
+      System.out.println("RMSE value: " + rmse);
 
     } catch (Exception e) {
       e.printStackTrace();
@@ -177,6 +219,7 @@ public class TransitDataMining {
     }
   }
 
+  //used by decisionTree to read in file as a stream
   public interface ReadFromFileTupleStream {
 
     static Stream<Tuple> read(String path, StructType schema) {
